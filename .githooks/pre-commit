@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# chainsmith pre-commit hook.
+#
+# Runs cheapest-and-most-critical first: secrets gate, formatting, lints,
+# unit tests. Integration tests in tests/ are excluded — they need a running
+# Postgres and run in CI, not on every commit.
+#
+# Bypassing this hook with --no-verify is technically allowed but contrary
+# to .claude/rules/security.md. If a step is failing, fix it; do not skip.
+
+set -euo pipefail
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks is not installed." >&2
+    echo "  install (Windows): winget install Gitleaks.Gitleaks" >&2
+    echo "  install (other):   https://github.com/gitleaks/gitleaks#installing" >&2
+    exit 1
+fi
+
+echo "pre-commit: scanning staged changes for secrets..."
+gitleaks git --staged --redact --verbose --no-banner
+
+echo "pre-commit: checking formatting..."
+cargo fmt --all -- --check
+
+echo "pre-commit: running clippy..."
+cargo clippy --all-targets --all-features -- -D warnings
+
+echo "pre-commit: running unit tests..."
+cargo test --lib --bins --quiet
+
+echo "pre-commit: ok"

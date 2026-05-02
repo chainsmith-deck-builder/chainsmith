@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# chainsmith commit-msg hook.
+# Enforces .claude/rules/commits.md (Conventional Commits 1.0).
+#
+# Validates only the subject line. Body and footer formatting (72-col wrap,
+# BREAKING CHANGE: footer shape) are conventions but not mechanically checked.
+
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+# Strip carriage returns so Windows-CRLF commit messages don't break the regex.
+SUBJECT=$(head -n1 "$COMMIT_MSG_FILE" | tr -d '\r')
+
+# Bypass git's auto-generated subjects.
+if [[ "$SUBJECT" =~ ^(Merge\ |Revert\ |fixup!|squash!|amend!) ]]; then
+    exit 0
+fi
+
+TYPES='feat|fix|perf|refactor|docs|style|test|build|ci|chore|revert'
+# Structure: type[(scope)][!]: <space><lowercase-or-digit-start><...><non-period-end>
+STRUCTURE="^(${TYPES})(\\([a-z0-9_/-]+\\))?!?: [a-z0-9].*[^.]$"
+
+if ! [[ "$SUBJECT" =~ $STRUCTURE ]]; then
+    cat >&2 <<EOF
+commit-msg: subject does not follow Conventional Commits.
+
+Got:
+  ${SUBJECT}
+
+Expected format:
+  <type>[(scope)][!]: <subject>
+
+Where:
+  - type is one of: ${TYPES//|/, }
+  - scope is optional, lowercase, only [a-z0-9_/-]
+  - subject starts with a lowercase letter or digit
+  - subject has no trailing period
+  - subject is at most 72 characters
+
+Examples:
+  feat(api): add /decks list endpoint
+  fix(db): retry once on dropped connection during migrations
+  feat(api)!: rename /cards endpoint to /catalog
+
+See .claude/rules/commits.md for the full rules.
+EOF
+    exit 1
+fi
+
+if [[ ${#SUBJECT} -gt 72 ]]; then
+    echo "commit-msg: subject is ${#SUBJECT} chars; max is 72." >&2
+    echo "  ${SUBJECT}" >&2
+    exit 1
+fi

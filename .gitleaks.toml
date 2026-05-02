@@ -1,0 +1,23 @@
+# gitleaks configuration for chainsmith.
+#
+# Loads the default ruleset and adds path-level allowlists for build
+# artifacts and generated logs. Real secrets never live in any of these
+# locations — .env is .gitignored, secrets come from env vars at runtime.
+#
+# If a real false positive shows up later, prefer pinning the exception by
+# rule ID + path/regex over silencing the rule globally.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Build artifacts, sqlx cache, generated specs, and local logs"
+paths = [
+  '''target/.*''',
+  '''\.sqlx/.*''',
+  '''openapi\.json$''',
+  '''cargo-build\.log$''',
+  '''server\.log$''',
+  '''clippy\.log$''',
+  '''test\.log$''',
+]

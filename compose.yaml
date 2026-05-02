@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: chainsmith-postgres
+    environment:
+      POSTGRES_USER: chainsmith
+      POSTGRES_PASSWORD: chainsmith
+      POSTGRES_DB: chainsmith
+    ports:
+      - "5432:5432"
+    volumes:
+      - chainsmith_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chainsmith -d chainsmith"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  chainsmith_pg:
