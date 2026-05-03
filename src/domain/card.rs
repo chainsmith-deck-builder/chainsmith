@@ -6,10 +6,13 @@
 //! values; the engine itself does no IO.
 
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::domain::ids::{CardId, HeroMoniker, PrintingId, SetCode};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Card {
     pub id: CardId,
     pub name: String,
@@ -23,22 +26,29 @@ pub struct Card {
     pub talents: Vec<Talent>,
     pub keywords: Vec<Keyword>,
     pub specializations: Vec<HeroMoniker>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub functional_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub type_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub flavor_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hero: Option<HeroFacts>,
     /// Grip on weapon cards. `None` for non-weapons.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub weapon_grip: Option<WeaponGrip>,
     pub legality_summary: LegalitySummary,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum WeaponGrip {
     OneHanded,
     TwoHanded,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum CardType {
     Hero,
     Action,
@@ -53,7 +63,8 @@ pub enum CardType {
     Token,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Class {
     Assassin,
     Bard,
@@ -70,7 +81,8 @@ pub enum Class {
     Wizard,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Talent {
     Draconic,
     Earth,
@@ -85,7 +97,8 @@ pub enum Talent {
 /// Free-form keyword. Upstream prints new keywords every set, so an enum here
 /// would be brittle and is not needed for legality checks (the validator does
 /// not switch on keyword).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
+#[serde(transparent)]
 pub struct Keyword(String);
 
 impl Keyword {
@@ -98,11 +111,14 @@ impl Keyword {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct HeroFacts {
     pub kind: HeroKind,
     pub life: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub intellect: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub arcane: Option<u8>,
     /// Class/Talent supertypes the hero grants via "Essence of X" abilities.
     /// These are unioned with the hero's printed supertypes when checking
@@ -116,14 +132,16 @@ pub struct HeroFacts {
     pub weapon_zone_count: u8,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum HeroKind {
     Adult,
     Young,
     PitFighter,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum EssenceGrant {
     Class(Class),
     Talent(Talent),
@@ -132,7 +150,8 @@ pub enum EssenceGrant {
 /// Snapshot of per-format legality from the upstream `card.json` flat booleans.
 /// Convenience for catalog filtering only — the validator is the source of
 /// truth for legality at a specific date.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LegalitySummary {
     pub cc: FormatStatus,
     pub blitz: FormatStatus,
@@ -142,7 +161,8 @@ pub struct LegalitySummary {
     pub upf: FormatStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum FormatStatus {
     #[default]
     Legal,
@@ -153,7 +173,8 @@ pub enum FormatStatus {
     NotEligible,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Printing {
     pub id: PrintingId,
     pub card_id: CardId,
@@ -163,23 +184,27 @@ pub struct Printing {
     pub foiling: Foiling,
     pub treatment: Treatment,
     pub rarity: Rarity,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub artist: Option<String>,
     pub collector_number: String,
     /// CDN URL for the card image, sourced from upstream. Clients (web,
     /// iOS, Android) load this URL directly from the LSS CDN — we do not
     /// proxy or cache imagery on our infrastructure (see
     /// `.claude/rules/security.md`).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Edition {
     Alpha,
     Unlimited,
     First,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Foiling {
     Standard,
     RainbowFoil,
@@ -187,7 +212,8 @@ pub enum Foiling {
     GoldFoil,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Treatment {
     Standard,
     ExtendedArt,
@@ -195,7 +221,8 @@ pub enum Treatment {
     AlternateArt,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Rarity {
     Common,
     Rare,

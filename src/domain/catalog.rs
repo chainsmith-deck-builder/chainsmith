@@ -43,6 +43,22 @@ impl Catalog {
         let card = self.card(&printing.card_id)?;
         Some((printing, card))
     }
+
+    /// Iterate over every card. Order is unspecified; callers that need
+    /// deterministic ordering must sort.
+    pub fn cards(&self) -> impl Iterator<Item = &Card> {
+        self.cards.values()
+    }
+
+    /// All printings of a given card. Linear scan — fine for current data
+    /// volume (~14k printings). If this becomes a hotspot, add an index from
+    /// `CardId -> Vec<PrintingId>` at insertion time.
+    pub fn printings_for_card(&self, card_id: &CardId) -> impl Iterator<Item = &Printing> + '_ {
+        let card_id = card_id.clone();
+        self.printings
+            .values()
+            .filter(move |p| p.card_id == card_id)
+    }
 }
 
 #[cfg(test)]

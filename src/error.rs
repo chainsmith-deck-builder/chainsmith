@@ -14,6 +14,7 @@ use utoipa::ToSchema;
 pub enum ErrorCode {
     DatabaseError,
     UnsupportedFormat,
+    NotFound,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -36,6 +37,8 @@ pub enum AppError {
     Database(#[from] sqlx::Error),
     #[error("format {0:?} is not supported by the validator")]
     UnsupportedFormat(crate::domain::format::FormatId),
+    #[error("{resource} '{id}' not found")]
+    NotFound { resource: &'static str, id: String },
 }
 
 impl AppError {
@@ -43,6 +46,7 @@ impl AppError {
         match self {
             Self::Database(_) => ErrorCode::DatabaseError,
             Self::UnsupportedFormat(_) => ErrorCode::UnsupportedFormat,
+            Self::NotFound { .. } => ErrorCode::NotFound,
         }
     }
 
@@ -50,6 +54,7 @@ impl AppError {
         match self {
             Self::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnsupportedFormat(_) => StatusCode::BAD_REQUEST,
+            Self::NotFound { .. } => StatusCode::NOT_FOUND,
         }
     }
 }
