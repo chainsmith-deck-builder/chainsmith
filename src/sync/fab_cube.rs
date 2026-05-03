@@ -509,6 +509,9 @@ pub fn convert_printing(
         rarity: parse_rarity(&j.rarity),
         artist: j.artists.first().cloned(),
         collector_number: j.id.clone(),
+        // Hot-link the CDN URL upstream provides; we never serve images
+        // ourselves. Clients fetch from LSS's CDN directly.
+        image_url: j.image_url.clone(),
     }
 }
 
@@ -1082,6 +1085,41 @@ mod tests {
         };
         let printing = convert_printing(&j, &CardId::new("c1"), &releases);
         assert_eq!(printing.set_release_date, placeholder_release_date());
+    }
+
+    #[test]
+    fn it_passes_image_url_through_to_printing() {
+        let releases = HashMap::new();
+        let url = "https://storage.googleapis.com/fabmaster/cardfaces/2024-MST/EN/MST131.png";
+        let j = PrintingJson {
+            unique_id: "p1".into(),
+            set_id: "MST".into(),
+            id: "MST131".into(),
+            edition: "N".into(),
+            foiling: "S".into(),
+            rarity: "M".into(),
+            artists: vec![],
+            image_url: Some(url.into()),
+        };
+        let printing = convert_printing(&j, &CardId::new("c1"), &releases);
+        assert_eq!(printing.image_url.as_deref(), Some(url));
+    }
+
+    #[test]
+    fn it_leaves_image_url_none_when_upstream_omits_it() {
+        let releases = HashMap::new();
+        let j = PrintingJson {
+            unique_id: "p1".into(),
+            set_id: "WTR".into(),
+            id: "WTR001".into(),
+            edition: "F".into(),
+            foiling: "S".into(),
+            rarity: "C".into(),
+            artists: vec![],
+            image_url: None,
+        };
+        let printing = convert_printing(&j, &CardId::new("c1"), &releases);
+        assert!(printing.image_url.is_none());
     }
 
     // -------- legality entry conversion --------

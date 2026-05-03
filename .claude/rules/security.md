@@ -44,13 +44,21 @@ Supabase Auth issues JWTs. This service verifies them.
 - Do not pass user input directly to SQL. sqlx parameter binding handles this when you use the macros, but if you ever drop down to dynamic queries, parameterize explicitly.
 - Cap request body size globally via Axum's body limit. The default is too generous for an API like this.
 
-## Card image proxy
+## Card images
 
-The card image proxy hot-links from `cards.fabtcg.com` and is wrapped in Cloudflare for caching. Rules:
+Card images are served by LSS's CDN. We surface the per-printing CDN URL on each `Printing` record (sourced from the upstream sync) and clients (web, iOS, Android) load images directly from LSS. We do not proxy or cache imagery on our infrastructure.
 
-- Validate the requested card id against the local card database before constructing an upstream URL. Never proxy arbitrary URLs.
-- Set a short timeout on the upstream fetch (a few seconds, not the reqwest default).
-- Fail closed on upstream errors: return a placeholder image or 404, never a 500 that exposes upstream details.
+Reasoning:
+
+- LSS owns the card art. Hot-linking is the same posture FaBrary, FaBDB, and Talishar take and is currently tolerated. Routing images through our infrastructure — even as a thin pass-through with Cloudflare caching — would have us redistributing LSS imagery on cache hits, which is a stronger infringement claim than direct linking.
+- The URL is upstream-controlled. When LSS rotates URLs, the next sync picks them up; clients always re-request the URL from our API rather than caching the URL string, so they get the new URL on the next call.
+- Web clients load via plain `<img src="...">` (no CORS implications for image display). Mobile clients use native HTTP and have nothing to configure.
+
+Engineering rules that follow from this:
+
+- The `image_url` field on `Printing` is `Option<String>`. When upstream omits it, surface `None` and let the client show a placeholder. Never substitute our own.
+- Do not introduce a `/images/{id}` proxy endpoint. If LSS ever blocks hot-linking via Referer header, the response is to negotiate with LSS for an explicit allowance for our origin, not to silently start re-serving their imagery.
+- Surface attribution where appropriate (a credits/legal page is sufficient). Do not misrepresent the image source.
 
 ## Rate limiting and abuse
 

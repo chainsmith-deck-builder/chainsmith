@@ -213,6 +213,7 @@ pub fn make_printing_at(printing_id: &str, card_id: &str, release: NaiveDate) ->
         rarity: Rarity::Common,
         artist: None,
         collector_number: "001".into(),
+        image_url: None,
     }
 }
 

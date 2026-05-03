@@ -165,6 +165,11 @@ pub struct Printing {
     pub rarity: Rarity,
     pub artist: Option<String>,
     pub collector_number: String,
+    /// CDN URL for the card image, sourced from upstream. Clients (web,
+    /// iOS, Android) load this URL directly from the LSS CDN — we do not
+    /// proxy or cache imagery on our infrastructure (see
+    /// `.claude/rules/security.md`).
+    pub image_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

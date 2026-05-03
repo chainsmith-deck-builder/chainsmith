@@ -94,6 +94,7 @@ mod tests {
             rarity: Rarity::Common,
             artist: None,
             collector_number: "001".into(),
+            image_url: None,
         }
     }
 
