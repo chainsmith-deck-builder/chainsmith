@@ -5,6 +5,7 @@ use utoipa_axum::router::OpenApiRouter;
 use crate::state::AppState;
 
 pub mod health;
+pub mod validate;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -27,5 +28,6 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 fn build() -> (Router<AppState>, utoipa::openapi::OpenApi) {
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .merge(health::router())
+        .merge(validate::router())
         .split_for_parts()
 }

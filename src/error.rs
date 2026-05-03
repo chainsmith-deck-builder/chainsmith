@@ -13,6 +13,7 @@ use utoipa::ToSchema;
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     DatabaseError,
+    UnsupportedFormat,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -33,18 +34,22 @@ pub struct ErrorDetail {
 pub enum AppError {
     #[error("database error")]
     Database(#[from] sqlx::Error),
+    #[error("format {0:?} is not supported by the validator")]
+    UnsupportedFormat(crate::domain::format::FormatId),
 }
 
 impl AppError {
     fn code(&self) -> ErrorCode {
         match self {
             Self::Database(_) => ErrorCode::DatabaseError,
+            Self::UnsupportedFormat(_) => ErrorCode::UnsupportedFormat,
         }
     }
 
     fn status(&self) -> StatusCode {
         match self {
             Self::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnsupportedFormat(_) => StatusCode::BAD_REQUEST,
         }
     }
 }

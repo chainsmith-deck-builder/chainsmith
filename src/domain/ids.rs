@@ -6,7 +6,11 @@
 
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
 pub struct CardId(String);
 
 impl CardId {
@@ -25,7 +29,8 @@ impl fmt::Display for CardId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
 pub struct PrintingId(String);
 
 impl PrintingId {
@@ -46,7 +51,8 @@ impl fmt::Display for PrintingId {
 
 /// The first comma-separated token of a hero's name (e.g. "Bravo, Star of the
 /// Show" -> "Bravo"). FaB specialization rules match on moniker, not full name.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
 pub struct HeroMoniker(String);
 
 impl HeroMoniker {
@@ -65,7 +71,8 @@ impl fmt::Display for HeroMoniker {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(transparent)]
 pub struct SetCode(String);
 
 impl SetCode {

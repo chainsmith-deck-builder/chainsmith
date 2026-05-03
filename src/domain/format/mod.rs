@@ -9,6 +9,8 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::domain::card::{Card, CardType, Class, EssenceGrant, Printing, Talent, WeaponGrip};
 use crate::domain::catalog::Catalog;
@@ -18,7 +20,8 @@ use crate::domain::violation::{Violation, ViolationCode, ViolationDetails};
 
 pub mod classic_constructed;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum FormatId {
     ClassicConstructed,
     Blitz,

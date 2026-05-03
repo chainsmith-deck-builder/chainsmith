@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "PolyForm-Noncommercial-1.0.0"
 publish = false
+default-run = "chainsmith"
 
 [lib]
 name = "chainsmith"
@@ -40,7 +41,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 dotenvy = "0.15.7"
 
-utoipa = { version = "5.4.0", features = ["axum_extras"] }
+utoipa = { version = "5.4.0", features = ["axum_extras", "chrono"] }
 utoipa-axum = "0.2.0"
 
 [dev-dependencies]

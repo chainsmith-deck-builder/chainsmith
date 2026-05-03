@@ -5,12 +5,17 @@
 //! may change. `details` carries optional structured context (which card,
 //! which slot, etc.).
 
+use serde::Serialize;
+use utoipa::ToSchema;
+
 use crate::domain::ids::{CardId, PrintingId};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Violation {
     pub code: ViolationCode,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<ViolationDetails>,
 }
 
@@ -18,7 +23,8 @@ pub struct Violation {
 ///
 /// Adding a variant is additive. Renaming or removing one is a breaking
 /// change in the production phase (see `.claude/rules/api-contract.md`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ViolationCode {
     HeroPrintingNotFoundInCatalog,
     HeroNotEligibleForFormat,
@@ -45,7 +51,12 @@ pub enum ViolationCode {
     WeaponConfigInvalid,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum ViolationDetails {
     Card {
         card_id: CardId,
@@ -62,6 +73,7 @@ pub enum ViolationDetails {
     DeckSize {
         found: u32,
         min: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
         max: Option<u32>,
     },
     PoolSize {
@@ -71,6 +83,7 @@ pub enum ViolationDetails {
     EquipmentSlot {
         printing_id: PrintingId,
         expected_slot: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         actual_slot: Option<String>,
     },
     LoadoutCard {

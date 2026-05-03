@@ -8,10 +8,14 @@
 //! "is this a legal selection from the parent pool?" but introduce no new
 //! format rules.
 
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+
 use crate::domain::format::FormatId;
 use crate::domain::ids::PrintingId;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Deck {
     pub format: FormatId,
     pub hero: PrintingId,
@@ -19,26 +23,30 @@ pub struct Deck {
     pub loadouts: Vec<Loadout>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PoolEntry {
     pub printing: PrintingId,
     pub quantity: u8,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Loadout {
     pub name: String,
     pub deck_cards: Vec<LoadoutEntry>,
     pub equipment: EquipmentLoadout,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LoadoutEntry {
     pub printing: PrintingId,
     pub quantity: u8,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EquipmentLoadout {
     pub head: Option<PrintingId>,
     pub chest: Option<PrintingId>,
