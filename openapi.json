@@ -1,14 +1,184 @@
-﻿{
+{
   "openapi": "3.1.0",
   "info": {
     "title": "Chainsmith API",
     "description": "Headless Rust API for the Chainsmith Flesh and Blood deck builder.",
     "license": {
-      "name": ""
+      "name": "PolyForm-Noncommercial-1.0.0",
+      "identifier": "PolyForm-Noncommercial-1.0.0"
     },
     "version": "0.1.0"
   },
   "paths": {
+    "/cards": {
+      "get": {
+        "operationId": "listCards",
+        "parameters": [
+          {
+            "name": "text",
+            "in": "query",
+            "description": "Case-insensitive substring match on `name`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "classes",
+            "in": "query",
+            "description": "Comma-separated list of class names. A card matches if it has any\nlisted class. Generic cards (no class) match only when the filter is\nomitted.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "talents",
+            "in": "query",
+            "description": "Comma-separated list of talent names. A card matches if it has any\nlisted talent.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "types",
+            "in": "query",
+            "description": "Comma-separated list of card type names. A card matches if it has\nany listed type.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pitch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "costMin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "costMax",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "Filter to cards that are currently `Legal` or `Restricted` in the\ngiven format (snapshot-based, not date-aware — for date-aware\nvalidation use `POST /validate`).",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FormatId"
+            }
+          },
+          {
+            "name": "legalForHero",
+            "in": "query",
+            "description": "Card id of a hero. Restricts results to cards whose supertypes are a\nsubset of the hero's effective supertypes (CR 1.1.3).",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/CardId"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cards matching the filter, paginated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cards/{id}": {
+      "get": {
+        "operationId": "getCard",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Card unique id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Card with all printings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Card not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "operationId": "getHealth",
@@ -35,10 +205,546 @@
           }
         }
       }
+    },
+    "/heroes": {
+      "get": {
+        "operationId": "listHeroes",
+        "parameters": [
+          {
+            "name": "text",
+            "in": "query",
+            "description": "Case-insensitive substring match on `name`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "classes",
+            "in": "query",
+            "description": "Comma-separated class names (any-match).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "talents",
+            "in": "query",
+            "description": "Comma-separated talent names (any-match).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "`adult`, `young`, or `pit_fighter`. Multiple values not supported —\nmost queries want exactly one.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/HeroKind"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "Filter to heroes currently `Legal` in the given format. CC-legal\nheroes that have been retired to Living Legend will *not* match\n`format=classic_constructed` (their `cc` legality is\n`living_legend_retired`); they will match `format=living_legend`.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/FormatId"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Heroes matching the filter, paginated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeroListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/validate": {
+      "post": {
+        "operationId": "validateDeck",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Validation completed; check `valid` and `violations`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request or unsupported format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Card": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "types",
+          "subtypes",
+          "classes",
+          "talents",
+          "keywords",
+          "specializations",
+          "legalitySummary"
+        ],
+        "properties": {
+          "classes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Class"
+            }
+          },
+          "cost": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "defense": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "flavorText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "functionalText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hero": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HeroFacts"
+              }
+            ]
+          },
+          "id": {
+            "$ref": "#/components/schemas/CardId"
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Keyword"
+            }
+          },
+          "legalitySummary": {
+            "$ref": "#/components/schemas/LegalitySummary"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pitch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "power": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "specializations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeroMoniker"
+            }
+          },
+          "subtypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "talents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Talent"
+            }
+          },
+          "typeText": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardType"
+            }
+          },
+          "weaponGrip": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WeaponGrip",
+                "description": "Grip on weapon cards. `None` for non-weapons."
+              }
+            ]
+          }
+        }
+      },
+      "CardDetail": {
+        "type": "object",
+        "required": [
+          "card",
+          "printings"
+        ],
+        "properties": {
+          "card": {
+            "$ref": "#/components/schemas/Card"
+          },
+          "printings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Printing"
+            }
+          }
+        }
+      },
+      "CardId": {
+        "type": "string"
+      },
+      "CardListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardSummary"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque cursor; pass back as `cursor` to fetch the next page. `null`\nwhen there are no more results."
+          }
+        }
+      },
+      "CardSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "types",
+          "classes",
+          "talents",
+          "legalitySummary"
+        ],
+        "properties": {
+          "classes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Class"
+            }
+          },
+          "cost": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "defaultPrinting": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrintingSummary",
+                "description": "A representative printing for catalog tile rendering. The first one\nby collector number; `None` when the card has no printings."
+              }
+            ]
+          },
+          "defense": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "id": {
+            "$ref": "#/components/schemas/CardId"
+          },
+          "legalitySummary": {
+            "$ref": "#/components/schemas/LegalitySummary"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pitch": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "power": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "talents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Talent"
+            }
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardType"
+            }
+          }
+        }
+      },
+      "CardType": {
+        "type": "string",
+        "enum": [
+          "hero",
+          "action",
+          "attack_action",
+          "attack_reaction",
+          "defense_reaction",
+          "instant",
+          "equipment",
+          "weapon",
+          "mentor",
+          "resource",
+          "token"
+        ]
+      },
+      "Class": {
+        "type": "string",
+        "enum": [
+          "assassin",
+          "bard",
+          "brute",
+          "guardian",
+          "illusionist",
+          "mechanologist",
+          "merchant",
+          "ninja",
+          "ranger",
+          "runeblade",
+          "shapeshifter",
+          "warrior",
+          "wizard"
+        ]
+      },
+      "Deck": {
+        "type": "object",
+        "required": [
+          "format",
+          "hero",
+          "pool",
+          "loadouts"
+        ],
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/FormatId"
+          },
+          "hero": {
+            "$ref": "#/components/schemas/PrintingId"
+          },
+          "loadouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Loadout"
+            }
+          },
+          "pool": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PoolEntry"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "Edition": {
+        "type": "string",
+        "enum": [
+          "alpha",
+          "unlimited",
+          "first"
+        ]
+      },
+      "EquipmentLoadout": {
+        "type": "object",
+        "properties": {
+          "arms": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrintingId"
+              }
+            ]
+          },
+          "chest": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrintingId"
+              }
+            ]
+          },
+          "head": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrintingId"
+              }
+            ]
+          },
+          "legs": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrintingId"
+              }
+            ]
+          },
+          "mainHand": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrintingId",
+                "description": "Main-hand slot. Holds a weapon (1H or 2H). A 2H weapon here occupies\nboth hand slots; see `off_hand` for the Companion exception."
+              }
+            ]
+          },
+          "offHand": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrintingId",
+                "description": "Off-hand slot. Holds either a 1H weapon, an off-hand equipment piece\n(shield, Trade Routes, etc.), or — when `main_hand` carries a 2H\nweapon — only a Companion-subtyped off-hand equipment piece."
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "ErrorBody": {
         "type": "object",
         "required": [
@@ -54,7 +760,9 @@
         "type": "string",
         "description": "Stable, machine-readable error codes. Clients are allowed to switch on\nthese. Adding a variant is additive; renaming or removing one is a\nbreaking change in production phase (see `.claude/rules/api-contract.md`).",
         "enum": [
-          "database_error"
+          "database_error",
+          "unsupported_format",
+          "not_found"
         ]
       },
       "ErrorDetail": {
@@ -73,6 +781,77 @@
           }
         }
       },
+      "EssenceGrant": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "class"
+                ]
+              },
+              "value": {
+                "$ref": "#/components/schemas/Class"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "value",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "talent"
+                ]
+              },
+              "value": {
+                "$ref": "#/components/schemas/Talent"
+              }
+            }
+          }
+        ]
+      },
+      "Foiling": {
+        "type": "string",
+        "enum": [
+          "standard",
+          "rainbow_foil",
+          "cold_foil",
+          "gold_foil"
+        ]
+      },
+      "FormatId": {
+        "type": "string",
+        "enum": [
+          "classic_constructed",
+          "blitz",
+          "commoner",
+          "silver_age",
+          "living_legend",
+          "ultimate_pit_fight"
+        ]
+      },
+      "FormatStatus": {
+        "type": "string",
+        "enum": [
+          "legal",
+          "banned",
+          "suspended",
+          "restricted",
+          "living_legend_retired",
+          "not_eligible"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "required": [
@@ -87,6 +866,670 @@
             "type": "string"
           }
         }
+      },
+      "HeroFacts": {
+        "type": "object",
+        "required": [
+          "kind",
+          "life",
+          "essenceGrants",
+          "weaponZoneCount"
+        ],
+        "properties": {
+          "arcane": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "essenceGrants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EssenceGrant"
+            },
+            "description": "Class/Talent supertypes the hero grants via \"Essence of X\" abilities.\nThese are unioned with the hero's printed supertypes when checking\nCR 1.1.3 (supertype subset rule)."
+          },
+          "intellect": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HeroKind"
+          },
+          "life": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "weaponZoneCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of weapon zones the hero has — i.e. the maximum number of\n`CardType::Weapon` printings the loadout may equip across main and\noff-hand combined. Default 2 (the standard hero). Kayo variants\noverride to 1; Bolfar to 0. Non-weapon equipment in the off-hand slot\n(shields, Companion items, etc.) does not consume a weapon zone.",
+            "minimum": 0
+          }
+        }
+      },
+      "HeroKind": {
+        "type": "string",
+        "enum": [
+          "adult",
+          "young",
+          "pit_fighter"
+        ]
+      },
+      "HeroListResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeroSummary"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HeroMoniker": {
+        "type": "string",
+        "description": "The first comma-separated token of a hero's name (e.g. \"Bravo, Star of the\nShow\" -> \"Bravo\"). FaB specialization rules match on moniker, not full name."
+      },
+      "HeroSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "classes",
+          "talents",
+          "life",
+          "essenceGrants",
+          "legalitySummary"
+        ],
+        "properties": {
+          "arcane": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "classes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Class"
+            }
+          },
+          "defaultPrinting": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PrintingSummary"
+              }
+            ]
+          },
+          "essenceGrants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EssenceGrant"
+            }
+          },
+          "id": {
+            "$ref": "#/components/schemas/CardId"
+          },
+          "intellect": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HeroKind"
+          },
+          "legalitySummary": {
+            "$ref": "#/components/schemas/LegalitySummary"
+          },
+          "life": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "talents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Talent"
+            }
+          }
+        }
+      },
+      "Keyword": {
+        "type": "string",
+        "description": "Free-form keyword. Upstream prints new keywords every set, so an enum here\nwould be brittle and is not needed for legality checks (the validator does\nnot switch on keyword)."
+      },
+      "LegalitySummary": {
+        "type": "object",
+        "description": "Snapshot of per-format legality from the upstream `card.json` flat booleans.\nConvenience for catalog filtering only — the validator is the source of\ntruth for legality at a specific date.",
+        "required": [
+          "cc",
+          "blitz",
+          "commoner",
+          "silverAge",
+          "livingLegend",
+          "upf"
+        ],
+        "properties": {
+          "blitz": {
+            "$ref": "#/components/schemas/FormatStatus"
+          },
+          "cc": {
+            "$ref": "#/components/schemas/FormatStatus"
+          },
+          "commoner": {
+            "$ref": "#/components/schemas/FormatStatus"
+          },
+          "livingLegend": {
+            "$ref": "#/components/schemas/FormatStatus"
+          },
+          "silverAge": {
+            "$ref": "#/components/schemas/FormatStatus"
+          },
+          "upf": {
+            "$ref": "#/components/schemas/FormatStatus"
+          }
+        }
+      },
+      "Loadout": {
+        "type": "object",
+        "required": [
+          "name",
+          "deckCards",
+          "equipment"
+        ],
+        "properties": {
+          "deckCards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LoadoutEntry"
+            }
+          },
+          "equipment": {
+            "$ref": "#/components/schemas/EquipmentLoadout"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "LoadoutEntry": {
+        "type": "object",
+        "required": [
+          "printing",
+          "quantity"
+        ],
+        "properties": {
+          "printing": {
+            "$ref": "#/components/schemas/PrintingId"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "PoolEntry": {
+        "type": "object",
+        "required": [
+          "printing",
+          "quantity"
+        ],
+        "properties": {
+          "printing": {
+            "$ref": "#/components/schemas/PrintingId"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "Printing": {
+        "type": "object",
+        "required": [
+          "id",
+          "cardId",
+          "set",
+          "setReleaseDate",
+          "edition",
+          "foiling",
+          "treatment",
+          "rarity",
+          "collectorNumber"
+        ],
+        "properties": {
+          "artist": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cardId": {
+            "$ref": "#/components/schemas/CardId"
+          },
+          "collectorNumber": {
+            "type": "string"
+          },
+          "edition": {
+            "$ref": "#/components/schemas/Edition"
+          },
+          "foiling": {
+            "$ref": "#/components/schemas/Foiling"
+          },
+          "id": {
+            "$ref": "#/components/schemas/PrintingId"
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "CDN URL for the card image, sourced from upstream. Clients (web,\niOS, Android) load this URL directly from the LSS CDN — we do not\nproxy or cache imagery on our infrastructure (see\n`.claude/rules/security.md`)."
+          },
+          "rarity": {
+            "$ref": "#/components/schemas/Rarity"
+          },
+          "set": {
+            "$ref": "#/components/schemas/SetCode"
+          },
+          "setReleaseDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "treatment": {
+            "$ref": "#/components/schemas/Treatment"
+          }
+        }
+      },
+      "PrintingId": {
+        "type": "string"
+      },
+      "PrintingSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "set",
+          "rarity"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/PrintingId"
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rarity": {
+            "$ref": "#/components/schemas/Rarity"
+          },
+          "set": {
+            "$ref": "#/components/schemas/SetCode"
+          }
+        }
+      },
+      "Rarity": {
+        "type": "string",
+        "enum": [
+          "common",
+          "rare",
+          "super_rare",
+          "majestic",
+          "legendary",
+          "fabled",
+          "promo",
+          "token"
+        ]
+      },
+      "SetCode": {
+        "type": "string"
+      },
+      "Talent": {
+        "type": "string",
+        "enum": [
+          "draconic",
+          "earth",
+          "elemental",
+          "ice",
+          "light",
+          "lightning",
+          "shadow",
+          "wind"
+        ]
+      },
+      "Treatment": {
+        "type": "string",
+        "enum": [
+          "standard",
+          "extended_art",
+          "marvel",
+          "alternate_art"
+        ]
+      },
+      "ValidateRequest": {
+        "type": "object",
+        "required": [
+          "deck"
+        ],
+        "properties": {
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Validation date. Used to evaluate time-evolving rules (banned list,\nLiving Legend retirement). Defaults to today UTC if omitted."
+          },
+          "deck": {
+            "$ref": "#/components/schemas/Deck"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ValidationResponse": {
+        "type": "object",
+        "required": [
+          "valid",
+          "format",
+          "date",
+          "violations"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "format": {
+            "$ref": "#/components/schemas/FormatId"
+          },
+          "valid": {
+            "type": "boolean",
+            "description": "True iff `violations` is empty."
+          },
+          "violations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Violation"
+            }
+          }
+        }
+      },
+      "Violation": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ViolationCode"
+          },
+          "details": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ViolationDetails"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ViolationCode": {
+        "type": "string",
+        "description": "Stable codes clients are allowed to switch on.\n\nAdding a variant is additive. Renaming or removing one is a breaking\nchange in the production phase (see `.claude/rules/api-contract.md`).",
+        "enum": [
+          "hero_printing_not_found_in_catalog",
+          "hero_not_eligible_for_format",
+          "hero_living_legend_retired",
+          "hero_missing_hero_type",
+          "pool_size_above_max",
+          "deck_size_below_min",
+          "deck_size_above_max",
+          "copy_limit_exceeded",
+          "restricted_copy_limit_exceeded",
+          "card_not_found_in_catalog",
+          "printing_not_found_in_catalog",
+          "card_not_eligible_for_format",
+          "card_banned",
+          "supertype_mismatch",
+          "specialization_mismatch",
+          "loadout_printing_not_in_pool",
+          "loadout_quantity_exceeds_pool",
+          "equipment_slot_wrong",
+          "equipment_not_in_pool",
+          "weapon_config_invalid"
+        ]
+      },
+      "ViolationDetails": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "card_id",
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "card_id": {
+                "$ref": "#/components/schemas/CardId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "card"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "printing_id",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "printing"
+                ]
+              },
+              "printing_id": {
+                "$ref": "#/components/schemas/PrintingId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "card_id",
+              "found",
+              "allowed",
+              "kind"
+            ],
+            "properties": {
+              "allowed": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "card_id": {
+                "$ref": "#/components/schemas/CardId"
+              },
+              "found": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "quantity"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "found",
+              "min",
+              "kind"
+            ],
+            "properties": {
+              "found": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "deck_size"
+                ]
+              },
+              "max": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "min": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "found",
+              "max",
+              "kind"
+            ],
+            "properties": {
+              "found": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "pool_size"
+                ]
+              },
+              "max": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "printing_id",
+              "expected_slot",
+              "kind"
+            ],
+            "properties": {
+              "actual_slot": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expected_slot": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "equipment_slot"
+                ]
+              },
+              "printing_id": {
+                "$ref": "#/components/schemas/PrintingId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "loadout",
+              "printing_id",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "loadout_card"
+                ]
+              },
+              "loadout": {
+                "type": "string"
+              },
+              "printing_id": {
+                "$ref": "#/components/schemas/PrintingId"
+              }
+            }
+          }
+        ]
+      },
+      "WeaponGrip": {
+        "type": "string",
+        "enum": [
+          "one_handed",
+          "two_handed"
+        ]
       }
     }
   }

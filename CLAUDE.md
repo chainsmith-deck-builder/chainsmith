@@ -46,7 +46,7 @@ Read these for their respective domains:
 
 Two hooks live in `.githooks/`, wired up by one `git config core.hooksPath .githooks` per clone:
 
-- **`pre-commit`** — scans staged changes for secrets via `gitleaks`, then runs `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test --lib --bins`. Integration tests in `tests/` are deliberately excluded — they need Postgres and run in CI.
+- **`pre-commit`** — scans staged changes for secrets via `gitleaks`, then runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test --lib --bins`, and an OpenAPI drift check (regenerates `openapi.json` to a tempfile and diffs against the committed copy). Integration tests in `tests/` are deliberately excluded — they need Postgres and run in CI.
 - **`commit-msg`** — validates the commit subject line against `.claude/rules/commits.md` (Conventional Commits 1.0). Pure bash, no commitlint dependency.
 
 One-time setup per clone:
@@ -76,8 +76,11 @@ sqlx migrate run
 # Audit dependencies
 cargo audit
 
-# Generate OpenAPI spec to stdout
-cargo run --bin export_openapi > openapi.json
+# Regenerate the committed OpenAPI spec (deterministic LF, no BOM,
+# regardless of shell). Run this after any API change; the pre-commit
+# hook and CI both fail if openapi.json drifts from what the code
+# generates.
+cargo run --bin export_openapi openapi.json
 ```
 
 ## Definition of done
@@ -86,7 +89,7 @@ A change is done when:
 
 - Code compiles without warnings (treat warnings as errors locally and in CI)
 - Tests pass, including negative and variant cases for the changed code
-- New endpoints have utoipa annotations and appear in `openapi.json`
+- New endpoints have utoipa annotations, `openapi.json` is regenerated, and the regenerated file is staged in the same commit as the code change
 - New SQL queries are compile-time checked by sqlx and the `.sqlx` cache is committed
 - Migration files are append-only if in `production` phase, freely editable in `pre-launch`
 - cargo-audit reports no new advisories

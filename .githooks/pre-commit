@@ -29,4 +29,16 @@ cargo clippy --all-targets --all-features -- -D warnings
 echo "pre-commit: running unit tests..."
 cargo test --lib --bins --quiet
 
+echo "pre-commit: checking openapi.json freshness..."
+tmp_spec=$(mktemp)
+trap 'rm -f "$tmp_spec"' EXIT
+cargo run --quiet --bin export_openapi -- "$tmp_spec"
+if ! diff -q openapi.json "$tmp_spec" >/dev/null 2>&1; then
+    echo "pre-commit: openapi.json is stale relative to the API code." >&2
+    echo "  regenerate with: cargo run --bin export_openapi openapi.json" >&2
+    echo "  then stage the result and re-commit." >&2
+    diff -u openapi.json "$tmp_spec" | head -40 >&2 || true
+    exit 1
+fi
+
 echo "pre-commit: ok"

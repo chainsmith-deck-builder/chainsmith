@@ -6,6 +6,7 @@ use crate::state::AppState;
 
 pub mod cards;
 pub mod health;
+pub mod heroes;
 pub mod validate;
 
 #[derive(OpenApi)]
@@ -31,5 +32,6 @@ fn build() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .merge(health::router())
         .merge(validate::router())
         .merge(cards::router())
+        .merge(heroes::router())
         .split_for_parts()
 }
