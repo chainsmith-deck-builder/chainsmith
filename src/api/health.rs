@@ -23,6 +23,7 @@ pub struct HealthResponse {
     get,
     path = "/health",
     operation_id = "getHealth",
+    tags = ["Health"],
     responses(
         (status = 200, description = "Service is healthy", body = HealthResponse),
         (status = 500, description = "Service is unhealthy", body = ErrorBody)

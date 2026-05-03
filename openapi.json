@@ -12,6 +12,9 @@
   "paths": {
     "/cards": {
       "get": {
+        "tags": [
+          "Catalog"
+        ],
         "operationId": "listCards",
         "parameters": [
           {
@@ -143,6 +146,9 @@
     },
     "/cards/{id}": {
       "get": {
+        "tags": [
+          "Catalog"
+        ],
         "operationId": "getCard",
         "parameters": [
           {
@@ -181,6 +187,9 @@
     },
     "/decks": {
       "get": {
+        "tags": [
+          "Decks"
+        ],
         "operationId": "listDecks",
         "responses": {
           "200": {
@@ -211,6 +220,9 @@
         ]
       },
       "post": {
+        "tags": [
+          "Decks"
+        ],
         "operationId": "createDeck",
         "requestBody": {
           "content": {
@@ -263,6 +275,9 @@
     },
     "/decks/{id}": {
       "get": {
+        "tags": [
+          "Decks"
+        ],
         "operationId": "getDeck",
         "parameters": [
           {
@@ -315,6 +330,9 @@
         ]
       },
       "delete": {
+        "tags": [
+          "Decks"
+        ],
         "operationId": "deleteDeck",
         "parameters": [
           {
@@ -362,6 +380,9 @@
     },
     "/health": {
       "get": {
+        "tags": [
+          "Health"
+        ],
         "operationId": "getHealth",
         "responses": {
           "200": {
@@ -389,6 +410,9 @@
     },
     "/heroes": {
       "get": {
+        "tags": [
+          "Catalog"
+        ],
         "operationId": "listHeroes",
         "parameters": [
           {
@@ -481,6 +505,9 @@
     },
     "/validate": {
       "post": {
+        "tags": [
+          "Validation"
+        ],
         "operationId": "validateDeck",
         "requestBody": {
           "content": {
@@ -1875,5 +1902,23 @@
         ]
       }
     }
-  }
+  },
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Liveness and readiness checks"
+    },
+    {
+      "name": "Catalog",
+      "description": "Card and hero browsing"
+    },
+    {
+      "name": "Validation",
+      "description": "Stateless deck legality checks"
+    },
+    {
+      "name": "Decks",
+      "description": "Authenticated deck CRUD"
+    }
+  ]
 }

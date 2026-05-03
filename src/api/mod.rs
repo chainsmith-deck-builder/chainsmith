@@ -16,6 +16,12 @@ pub mod validate;
         title = "Chainsmith API",
         version = env!("CARGO_PKG_VERSION"),
         description = "Headless Rust API for the Chainsmith Flesh and Blood deck builder."
+    ),
+    tags(
+        (name = "Health", description = "Liveness and readiness checks"),
+        (name = "Catalog", description = "Card and hero browsing"),
+        (name = "Validation", description = "Stateless deck legality checks"),
+        (name = "Decks", description = "Authenticated deck CRUD")
     )
 )]
 struct ApiDoc;
