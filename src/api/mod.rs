@@ -5,6 +5,7 @@ use utoipa_axum::router::OpenApiRouter;
 use crate::state::AppState;
 
 pub mod cards;
+pub mod decks;
 pub mod health;
 pub mod heroes;
 pub mod validate;
@@ -33,5 +34,6 @@ fn build() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .merge(validate::router())
         .merge(cards::router())
         .merge(heroes::router())
+        .merge(decks::router())
         .split_for_parts()
 }

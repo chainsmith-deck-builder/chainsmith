@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use chainsmith::{
     api,
-    config::Config,
+    auth::{jwks::JwksCache, AuthContext, AuthMode},
+    config::{AuthConfig, Config},
     db,
     domain::format::classic_constructed::ClassicConstructed,
     state::AppState,
@@ -70,10 +71,13 @@ async fn main() -> anyhow::Result<()> {
     ));
     let catalog = Arc::new(sync_output.catalog);
 
+    let auth = Arc::new(build_auth_context(&config.auth, http_client.clone()));
+
     let state = AppState {
         pool,
         catalog,
         cc_format,
+        auth,
     };
     let app = api::router(state).layer(TraceLayer::new_for_http());
 
@@ -85,4 +89,41 @@ async fn main() -> anyhow::Result<()> {
     info!(%addr, "chainsmith listening");
     axum::serve(listener, app).await.context("serving HTTP")?;
     Ok(())
+}
+
+fn build_auth_context(cfg: &AuthConfig, http: reqwest::Client) -> AuthContext {
+    let mode = match cfg {
+        AuthConfig::Jwks {
+            jwks_url,
+            issuer,
+            audience,
+            ttl,
+        } => {
+            info!(jwks_url = %jwks_url, "auth: JWKS mode");
+            AuthMode::Jwks {
+                jwks: Arc::new(JwksCache::new(http, jwks_url.clone(), *ttl)),
+                issuer: issuer.clone(),
+                audience: audience.clone(),
+            }
+        }
+        AuthConfig::DevSecret {
+            secret,
+            issuer,
+            audience,
+        } => {
+            tracing::warn!("auth: DEV-SECRET mode (HS256). Do not use in production.");
+            AuthMode::DevSecret {
+                secret: Arc::new(secret.clone()),
+                issuer: issuer.clone(),
+                audience: audience.clone(),
+            }
+        }
+        AuthConfig::Disabled => {
+            tracing::warn!(
+                "auth: DISABLED. Set AUTH_ISSUER and AUTH_JWKS_URL or AUTH_DEV_SECRET to enable."
+            );
+            AuthMode::Disabled
+        }
+    };
+    AuthContext { mode }
 }

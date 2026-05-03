@@ -18,6 +18,10 @@ path = "src/main.rs"
 name = "export_openapi"
 path = "src/bin/export_openapi.rs"
 
+[[bin]]
+name = "dev_jwt"
+path = "src/bin/dev_jwt.rs"
+
 [dependencies]
 axum = "0.8.1"
 tokio = { version = "1.42.0", features = ["full"] }
@@ -28,7 +32,11 @@ sqlx = { version = "0.8.2", default-features = false, features = ["runtime-tokio
 
 chrono = { version = "0.4.39", default-features = false, features = ["std", "serde"] }
 
-reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls", "json"] }
+
+jsonwebtoken = { version = "10.3.0", default-features = false, features = ["rust_crypto"] }
+
+uuid = { version = "1.11.0", features = ["serde", "v4"] }
 
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
@@ -41,7 +49,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 dotenvy = "0.15.7"
 
-utoipa = { version = "5.4.0", features = ["axum_extras", "chrono"] }
+utoipa = { version = "5.4.0", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-axum = "0.2.0"
 
 [dev-dependencies]

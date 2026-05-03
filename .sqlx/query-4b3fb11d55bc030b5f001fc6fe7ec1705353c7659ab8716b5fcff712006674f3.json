@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO deck_loadout_entries (loadout_id, printing_id, quantity)\n                VALUES ($1, $2, $3)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b3fb11d55bc030b5f001fc6fe7ec1705353c7659ab8716b5fcff712006674f3"
+}

@@ -15,6 +15,9 @@ pub enum ErrorCode {
     DatabaseError,
     UnsupportedFormat,
     NotFound,
+    Unauthorized,
+    Forbidden,
+    AuthNotConfigured,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -39,6 +42,12 @@ pub enum AppError {
     UnsupportedFormat(crate::domain::format::FormatId),
     #[error("{resource} '{id}' not found")]
     NotFound { resource: &'static str, id: String },
+    #[error("unauthorized")]
+    Unauthorized,
+    #[error("forbidden")]
+    Forbidden,
+    #[error("auth is not configured on this server")]
+    AuthNotConfigured,
 }
 
 impl AppError {
@@ -47,6 +56,9 @@ impl AppError {
             Self::Database(_) => ErrorCode::DatabaseError,
             Self::UnsupportedFormat(_) => ErrorCode::UnsupportedFormat,
             Self::NotFound { .. } => ErrorCode::NotFound,
+            Self::Unauthorized => ErrorCode::Unauthorized,
+            Self::Forbidden => ErrorCode::Forbidden,
+            Self::AuthNotConfigured => ErrorCode::AuthNotConfigured,
         }
     }
 
@@ -55,6 +67,9 @@ impl AppError {
             Self::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnsupportedFormat(_) => StatusCode::BAD_REQUEST,
             Self::NotFound { .. } => StatusCode::NOT_FOUND,
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Forbidden => StatusCode::FORBIDDEN,
+            Self::AuthNotConfigured => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }

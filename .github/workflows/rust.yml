@@ -9,10 +9,28 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  DATABASE_URL: postgres://chainsmith:chainsmith@localhost:5432/chainsmith
+  SQLX_OFFLINE: "true"
 
 jobs:
   check:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: chainsmith
+          POSTGRES_PASSWORD: chainsmith
+          POSTGRES_DB: chainsmith
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +54,14 @@ jobs:
 
       - name: Unit tests
         run: cargo test --lib --bins --verbose
+
+      - name: Integration tests (DB-backed)
+        # `tests/` files exercise real Postgres via sqlx::test (per-test DBs).
+        # SQLX_OFFLINE is unset here so query macros validate against the
+        # running database — catches any schema/cache drift CI-side.
+        env:
+          SQLX_OFFLINE: "false"
+        run: cargo test --tests --verbose
 
       - name: OpenAPI spec is up to date
         # The committed openapi.json must match what the code generates.

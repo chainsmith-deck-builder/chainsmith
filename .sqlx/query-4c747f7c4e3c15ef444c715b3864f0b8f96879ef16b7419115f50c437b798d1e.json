@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE decks\n        SET deleted_at = now()\n        WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4c747f7c4e3c15ef444c715b3864f0b8f96879ef16b7419115f50c437b798d1e"
+}

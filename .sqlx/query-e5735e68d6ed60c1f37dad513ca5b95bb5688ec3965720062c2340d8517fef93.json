@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT deck_id, printing_id, quantity\n        FROM deck_pool_entries\n        WHERE deck_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deck_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "printing_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "quantity",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e5735e68d6ed60c1f37dad513ca5b95bb5688ec3965720062c2340d8517fef93"
+}

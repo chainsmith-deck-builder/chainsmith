@@ -274,6 +274,9 @@ mod tests {
             pool,
             catalog: Arc::new(catalog),
             cc_format: Arc::new(ClassicConstructed::empty()),
+            auth: Arc::new(crate::auth::AuthContext {
+                mode: crate::auth::AuthMode::Disabled,
+            }),
         }
     }
 

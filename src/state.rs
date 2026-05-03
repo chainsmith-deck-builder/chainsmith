@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
+use crate::auth::AuthContext;
 use crate::domain::catalog::Catalog;
 use crate::domain::format::classic_constructed::ClassicConstructed;
 
@@ -15,4 +16,7 @@ pub struct AppState {
     /// banned and Living Legend lists from the sync. Reused by validation
     /// requests.
     pub cc_format: Arc<ClassicConstructed>,
+    /// JWT verification context. The `AuthenticatedUser` extractor consults
+    /// this to validate tokens on auth-protected routes.
+    pub auth: Arc<AuthContext>,
 }

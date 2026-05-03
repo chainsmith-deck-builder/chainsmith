@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT loadout_id, slot, printing_id\n        FROM deck_loadout_equipment\n        WHERE loadout_id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "loadout_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "slot",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "printing_id",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5dbeeb33ea0ea6582e3560bc17a8f3ddb91adb335dc87f1ff1aa07ac56776e90"
+}

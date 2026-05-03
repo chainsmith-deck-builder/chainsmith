@@ -63,8 +63,14 @@ If `gitleaks` is not on PATH, install it (`winget install Gitleaks.Gitleaks` on 
 # Run the server locally
 cargo run
 
-# Run tests
-cargo test
+# Run unit tests (no DB required; uses the committed .sqlx cache)
+cargo test --lib --bins
+
+# Run integration tests (requires DATABASE_URL pointing to a Postgres
+# cluster the user can CREATE DATABASE on — sqlx::test makes a fresh DB
+# per test, runs migrations, drops it after).
+DATABASE_URL=postgres://chainsmith:chainsmith@localhost:5432/chainsmith \
+  cargo test --tests
 
 # Compile-time SQL check (requires a populated .sqlx cache committed to the repo,
 # or a live DATABASE_URL at compile time)
@@ -81,6 +87,11 @@ cargo audit
 # hook and CI both fail if openapi.json drifts from what the code
 # generates.
 cargo run --bin export_openapi openapi.json
+
+# Mint a development JWT for local API testing. Requires AUTH_DEV_SECRET
+# and AUTH_ISSUER set (in .env or environment). The token expires in 24h.
+TOKEN=$(cargo run --quiet --bin dev_jwt)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/decks
 ```
 
 ## Definition of done

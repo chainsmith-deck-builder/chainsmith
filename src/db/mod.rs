@@ -4,6 +4,8 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 
 use crate::config::Config;
 
+pub mod deck;
+
 const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub async fn init_pool(config: &Config) -> Result<PgPool, sqlx::Error> {
