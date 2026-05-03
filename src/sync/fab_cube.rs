@@ -9,6 +9,8 @@
 //! the top of the file; the rest is pure.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::Deserialize;
@@ -29,6 +31,8 @@ pub enum SyncError {
     Http(#[from] reqwest::Error),
     #[error("JSON parse error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("cache IO error: {0}")]
+    Cache(#[from] std::io::Error),
 }
 
 // ---- wire types ----
@@ -630,16 +634,127 @@ pub async fn fetch_from_upstream(
     client: &reqwest::Client,
     source: &UpstreamSource,
 ) -> Result<SyncOutput, SyncError> {
-    let cards_json = fetch_text(client, &source.url("card.json")).await?;
-    let banned_json = fetch_text(client, &source.url("banned-cc.json")).await?;
-    let ll_json = fetch_text(client, &source.url("living-legend-cc.json")).await?;
-    let sets_json = fetch_text(client, &source.url("set.json")).await?;
-    build_from_json(&cards_json, &banned_json, &ll_json, &sets_json)
+    let raw = fetch_files(client, source).await?;
+    build_from_json(&raw.cards, &raw.banned, &raw.ll, &raw.sets)
 }
 
 async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, SyncError> {
     let response = client.get(url).send().await?.error_for_status()?;
     Ok(response.text().await?)
+}
+
+// ---- cache layer ----
+
+/// On-disk cache config for sync data. Cache layout under `directory`
+/// is one subdirectory per upstream git ref so switching refs (e.g. main →
+/// pinned tag) doesn't read each other's data.
+#[derive(Debug, Clone)]
+pub struct SyncCache {
+    pub directory: PathBuf,
+    pub ttl: Duration,
+}
+
+const CACHE_FILES: &[&str] = &[
+    "card.json",
+    "banned-cc.json",
+    "living-legend-cc.json",
+    "set.json",
+];
+
+struct RawSyncFiles {
+    cards: String,
+    banned: String,
+    ll: String,
+    sets: String,
+}
+
+/// Load the catalog + CC banlists, preferring the cache when fresh.
+///
+/// Behavior:
+/// - Cache present and fresh (mtime within `cache.ttl`): load from disk.
+/// - Cache stale or missing: fetch from upstream, write cache, then parse.
+/// - No cache passed: always fetch (no on-disk persistence).
+///
+/// Errors propagate from HTTP, IO, or JSON parsing. The cache is *not*
+/// consulted as a fallback when fetch fails — by design we'd rather fail
+/// loud at startup than serve stale data silently.
+pub async fn load_or_fetch(
+    client: &reqwest::Client,
+    source: &UpstreamSource,
+    cache: Option<&SyncCache>,
+) -> Result<SyncOutput, SyncError> {
+    if let Some(cache) = cache {
+        let dir = cache_dir_for_ref(cache, source);
+        if cache_is_fresh(&dir, cache.ttl)? {
+            tracing::info!(directory = ?dir, "loading card data from cache");
+            return load_from_cache(&dir);
+        }
+        tracing::info!(directory = ?dir, "cache miss or stale; fetching upstream");
+    } else {
+        tracing::info!("no cache configured; fetching upstream");
+    }
+
+    let raw = fetch_files(client, source).await?;
+
+    if let Some(cache) = cache {
+        let dir = cache_dir_for_ref(cache, source);
+        if let Err(err) = write_to_cache(&dir, &raw) {
+            tracing::warn!(?err, directory = ?dir, "failed to write sync cache; continuing");
+        }
+    }
+
+    build_from_json(&raw.cards, &raw.banned, &raw.ll, &raw.sets)
+}
+
+async fn fetch_files(
+    client: &reqwest::Client,
+    source: &UpstreamSource,
+) -> Result<RawSyncFiles, SyncError> {
+    Ok(RawSyncFiles {
+        cards: fetch_text(client, &source.url("card.json")).await?,
+        banned: fetch_text(client, &source.url("banned-cc.json")).await?,
+        ll: fetch_text(client, &source.url("living-legend-cc.json")).await?,
+        sets: fetch_text(client, &source.url("set.json")).await?,
+    })
+}
+
+fn cache_dir_for_ref(cache: &SyncCache, source: &UpstreamSource) -> PathBuf {
+    cache.directory.join(&source.git_ref)
+}
+
+fn cache_is_fresh(dir: &Path, ttl: Duration) -> Result<bool, SyncError> {
+    // Use card.json's mtime as the freshness probe; the four files are
+    // written together atomically enough that they share the same age.
+    let probe = dir.join("card.json");
+    match std::fs::metadata(&probe) {
+        Ok(meta) => {
+            let modified = meta.modified()?;
+            let age = SystemTime::now()
+                .duration_since(modified)
+                .unwrap_or(Duration::ZERO);
+            Ok(age < ttl)
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn load_from_cache(dir: &Path) -> Result<SyncOutput, SyncError> {
+    let cards = std::fs::read_to_string(dir.join("card.json"))?;
+    let banned = std::fs::read_to_string(dir.join("banned-cc.json"))?;
+    let ll = std::fs::read_to_string(dir.join("living-legend-cc.json"))?;
+    let sets = std::fs::read_to_string(dir.join("set.json"))?;
+    build_from_json(&cards, &banned, &ll, &sets)
+}
+
+fn write_to_cache(dir: &Path, raw: &RawSyncFiles) -> Result<(), SyncError> {
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(dir.join("card.json"), &raw.cards)?;
+    std::fs::write(dir.join("banned-cc.json"), &raw.banned)?;
+    std::fs::write(dir.join("living-legend-cc.json"), &raw.ll)?;
+    std::fs::write(dir.join("set.json"), &raw.sets)?;
+    tracing::debug!(directory = ?dir, files = ?CACHE_FILES, "wrote sync cache");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1023,6 +1138,96 @@ mod tests {
             .cc_banned
             .iter()
             .any(|e| e.card_id.as_str() == "crown_of_seeds"));
+    }
+
+    // -------- cache layer --------
+
+    #[test]
+    fn it_treats_missing_cache_dir_as_not_fresh() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("does-not-exist");
+        assert!(!cache_is_fresh(&dir, Duration::from_secs(60)).unwrap());
+    }
+
+    #[test]
+    fn it_treats_empty_cache_dir_as_not_fresh() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Directory exists but contains no card.json.
+        assert!(!cache_is_fresh(tmp.path(), Duration::from_secs(60)).unwrap());
+    }
+
+    #[test]
+    fn it_treats_just_written_cache_as_fresh() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("card.json"), "[]").unwrap();
+        assert!(cache_is_fresh(tmp.path(), Duration::from_secs(60)).unwrap());
+    }
+
+    #[test]
+    fn it_writes_and_reads_back_cache_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let raw = RawSyncFiles {
+            cards: realistic_cards_json().to_string(),
+            banned: realistic_banned_cc_json().to_string(),
+            ll: realistic_ll_cc_json().to_string(),
+            sets: realistic_sets_json().to_string(),
+        };
+        write_to_cache(tmp.path(), &raw).unwrap();
+        // All four files are present
+        for file in CACHE_FILES {
+            assert!(tmp.path().join(file).exists(), "missing cache file: {file}");
+        }
+        let out = load_from_cache(tmp.path()).unwrap();
+        assert_eq!(out.card_count, 3);
+        assert!(out
+            .cc_banned
+            .iter()
+            .any(|e| e.card_id.as_str() == "crown_of_seeds"));
+    }
+
+    #[test]
+    fn it_partitions_cache_dir_by_git_ref() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = SyncCache {
+            directory: tmp.path().to_path_buf(),
+            ttl: Duration::from_secs(60),
+        };
+        let main = UpstreamSource::main();
+        let pinned = UpstreamSource::at("v1.2.3");
+        assert_ne!(
+            cache_dir_for_ref(&cache, &main),
+            cache_dir_for_ref(&cache, &pinned)
+        );
+    }
+
+    #[tokio::test]
+    async fn it_loads_from_cache_without_calling_upstream_on_hit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = SyncCache {
+            directory: tmp.path().to_path_buf(),
+            ttl: Duration::from_secs(60),
+        };
+        let source = UpstreamSource::main();
+        // Pre-seed the cache directory at the git-ref-resolved path.
+        let dir = cache_dir_for_ref(&cache, &source);
+        std::fs::create_dir_all(&dir).unwrap();
+        let raw = RawSyncFiles {
+            cards: realistic_cards_json().to_string(),
+            banned: realistic_banned_cc_json().to_string(),
+            ll: realistic_ll_cc_json().to_string(),
+            sets: realistic_sets_json().to_string(),
+        };
+        write_to_cache(&dir, &raw).unwrap();
+
+        // Use a client pointing at an unreachable address. With the cache
+        // pre-seeded and fresh, load_or_fetch should never await the
+        // client.
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(1))
+            .build()
+            .unwrap();
+        let out = load_or_fetch(&client, &source, Some(&cache)).await.unwrap();
+        assert_eq!(out.card_count, 3);
     }
 
     // -------- smoke test against real upstream clone --------

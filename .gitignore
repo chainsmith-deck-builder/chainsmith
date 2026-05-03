@@ -24,3 +24,6 @@ desktop.ini
 # Logs and local data
 *.log
 /data/
+
+# Sync cache (per src/sync/fab_cube.rs)
+/.chainsmith-cache/
