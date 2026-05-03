@@ -120,6 +120,7 @@ pub struct DeckListResponse {
     post,
     path = "/decks",
     operation_id = "createDeck",
+    tags = ["Decks"],
     request_body = CreateDeckRequest,
     responses(
         (status = 201, description = "Deck created", body = DeckResponse),
@@ -177,6 +178,7 @@ async fn create_deck(
     get,
     path = "/decks",
     operation_id = "listDecks",
+    tags = ["Decks"],
     responses(
         (status = 200, description = "Decks owned by the authenticated user", body = DeckListResponse),
         (status = 401, description = "Missing or invalid Authorization header", body = ErrorBody),
@@ -196,6 +198,7 @@ async fn list_decks(
     get,
     path = "/decks/{id}",
     operation_id = "getDeck",
+    tags = ["Decks"],
     params(("id" = Uuid, Path, description = "Deck id")),
     responses(
         (status = 200, description = "Full deck", body = DeckResponse),
@@ -232,6 +235,7 @@ async fn get_deck(
     delete,
     path = "/decks/{id}",
     operation_id = "deleteDeck",
+    tags = ["Decks"],
     params(("id" = Uuid, Path, description = "Deck id")),
     responses(
         (status = 204, description = "Deleted (soft)"),

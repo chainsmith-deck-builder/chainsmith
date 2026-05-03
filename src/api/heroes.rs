@@ -83,6 +83,7 @@ pub struct HeroListResponse {
     get,
     path = "/heroes",
     operation_id = "listHeroes",
+    tags = ["Catalog"],
     params(HeroSearchQuery),
     responses(
         (status = 200, description = "Heroes matching the filter, paginated", body = HeroListResponse),

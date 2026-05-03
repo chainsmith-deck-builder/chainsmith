@@ -44,6 +44,7 @@ pub struct ValidationResponse {
     post,
     path = "/validate",
     operation_id = "validateDeck",
+    tags = ["Validation"],
     request_body = ValidateRequest,
     responses(
         (status = 200, description = "Validation completed; check `valid` and `violations`", body = ValidationResponse),

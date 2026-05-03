@@ -116,6 +116,7 @@ pub struct CardDetail {
     get,
     path = "/cards",
     operation_id = "listCards",
+    tags = ["Catalog"],
     params(CardSearchQuery),
     responses(
         (status = 200, description = "Cards matching the filter, paginated", body = CardListResponse),
@@ -165,6 +166,7 @@ async fn list_cards(
     get,
     path = "/cards/{id}",
     operation_id = "getCard",
+    tags = ["Catalog"],
     params(("id" = String, Path, description = "Card unique id")),
     responses(
         (status = 200, description = "Card with all printings", body = CardDetail),
