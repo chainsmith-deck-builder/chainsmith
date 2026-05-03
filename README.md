@@ -1,4 +1,5 @@
-# Chainsmith
+<img width="1280" height="720" alt="Chainsmith_gray_transparent" src="https://github.com/user-attachments/assets/9506cf83-b70e-4351-8dac-5b5f35dba45d" />
+
 
 Headless Rust backend and validation engine for **Chainsmith**, a design-first deck builder and collection manager for [Flesh and Blood TCG](https://fabtcg.com/).
 
