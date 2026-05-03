@@ -10,7 +10,9 @@
 //! container set up in CLAUDE.md; in CI it's the `postgres` service in
 //! `.github/workflows/rust.yml`.
 
-use chainsmith::db::deck::{self, NewDeck, NewLoadout};
+use chainsmith::db::deck::{
+    self, NewDeck, NewLoadout, PatchDeckMetadata, ReplaceDeck, UpdateOutcome,
+};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -193,6 +195,237 @@ async fn it_returns_false_when_soft_deleting_missing_deck(pool: PgPool) {
         .await
         .unwrap();
     assert!(!deleted);
+}
+
+fn replace_with<'a>(
+    name: &'a str,
+    pool: &'a [(String, i16)],
+    loadouts: &'a [NewLoadout<'a>],
+) -> ReplaceDeck<'a> {
+    ReplaceDeck {
+        format: "classic_constructed",
+        hero_printing_id: "hero_p1",
+        name,
+        description: None,
+        visibility: "private",
+        tags: &[],
+        pool,
+        loadouts,
+    }
+}
+
+#[sqlx::test]
+async fn it_replaces_deck_metadata_pool_and_loadouts(pool: PgPool) {
+    let owner = Uuid::new_v4();
+    let initial_pool = vec![("printing_a".to_string(), 3i16)];
+    let initial_loadouts = vec![NewLoadout {
+        name: "Old loadout",
+        notes: None,
+        ordinal: 0,
+        deck_cards: &initial_pool,
+        equipment: &[],
+    }];
+    let id = deck::create_deck(&pool, new_deck(owner, &initial_pool, &initial_loadouts))
+        .await
+        .unwrap();
+    let original = deck::fetch_deck(&pool, id).await.unwrap().unwrap();
+
+    let new_pool = vec![
+        ("printing_b".to_string(), 2i16),
+        ("printing_c".to_string(), 1i16),
+    ];
+    let new_loadout_cards = vec![("printing_b".to_string(), 2i16)];
+    let new_loadout_equipment = vec![("main_hand", "weapon_q".to_string())];
+    let new_loadouts = vec![NewLoadout {
+        name: "vs aggro",
+        notes: Some("midrange plan"),
+        ordinal: 0,
+        deck_cards: &new_loadout_cards,
+        equipment: &new_loadout_equipment,
+    }];
+
+    let outcome = deck::replace_deck(
+        &pool,
+        id,
+        owner,
+        original.updated_at,
+        replace_with("New Name", &new_pool, &new_loadouts),
+    )
+    .await
+    .unwrap();
+
+    let updated = match outcome {
+        UpdateOutcome::Updated(row) => row,
+        other => panic!("expected Updated, got {other:?}"),
+    };
+    assert_eq!(updated.name, "New Name");
+    assert!(updated.updated_at > original.updated_at);
+
+    // Old pool/loadout rows are gone, new ones present.
+    let mut entries = deck::fetch_pool_entries(&pool, id).await.unwrap();
+    entries.sort_by(|a, b| a.printing_id.cmp(&b.printing_id));
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].printing_id, "printing_b");
+    assert_eq!(entries[1].printing_id, "printing_c");
+
+    let loadouts = deck::fetch_loadouts(&pool, id).await.unwrap();
+    assert_eq!(loadouts.len(), 1);
+    assert_eq!(loadouts[0].name, "vs aggro");
+    let loadout_ids: Vec<Uuid> = loadouts.iter().map(|l| l.id).collect();
+    let equipment = deck::fetch_loadout_equipment(&pool, &loadout_ids)
+        .await
+        .unwrap();
+    assert_eq!(equipment.len(), 1);
+    assert_eq!(equipment[0].slot, "main_hand");
+    assert_eq!(equipment[0].printing_id, "weapon_q");
+}
+
+#[sqlx::test]
+async fn it_returns_precondition_failed_when_replace_uses_stale_updated_at(pool: PgPool) {
+    let owner = Uuid::new_v4();
+    let id = deck::create_deck(&pool, new_deck(owner, &[], &[]))
+        .await
+        .unwrap();
+    let stale = chrono::DateTime::<chrono::Utc>::from_timestamp_micros(0).unwrap();
+
+    let outcome = deck::replace_deck(&pool, id, owner, stale, replace_with("X", &[], &[]))
+        .await
+        .unwrap();
+
+    assert!(matches!(outcome, UpdateOutcome::PreconditionFailed));
+    // Original deck was not mutated.
+    let row = deck::fetch_deck(&pool, id).await.unwrap().unwrap();
+    assert_eq!(row.name, "Test Deck");
+}
+
+#[sqlx::test]
+async fn it_returns_not_found_when_replacing_unknown_deck(pool: PgPool) {
+    let owner = Uuid::new_v4();
+    let now = chrono::Utc::now();
+    let outcome = deck::replace_deck(
+        &pool,
+        Uuid::new_v4(),
+        owner,
+        now,
+        replace_with("X", &[], &[]),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(outcome, UpdateOutcome::NotFound));
+}
+
+#[sqlx::test]
+async fn it_returns_not_found_when_replacing_other_users_deck(pool: PgPool) {
+    let owner = Uuid::new_v4();
+    let attacker = Uuid::new_v4();
+    let id = deck::create_deck(&pool, new_deck(owner, &[], &[]))
+        .await
+        .unwrap();
+    let row = deck::fetch_deck(&pool, id).await.unwrap().unwrap();
+
+    let outcome = deck::replace_deck(
+        &pool,
+        id,
+        attacker,
+        row.updated_at,
+        replace_with("Hijacked", &[], &[]),
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(outcome, UpdateOutcome::NotFound));
+    let after = deck::fetch_deck(&pool, id).await.unwrap().unwrap();
+    assert_eq!(after.name, "Test Deck", "non-owner replace must not mutate");
+}
+
+#[sqlx::test]
+async fn it_updates_metadata_subset_and_bumps_updated_at(pool: PgPool) {
+    let owner = Uuid::new_v4();
+    let id = deck::create_deck(&pool, new_deck(owner, &[], &[]))
+        .await
+        .unwrap();
+    let original = deck::fetch_deck(&pool, id).await.unwrap().unwrap();
+
+    let new_tags = vec!["aggro".to_string(), "tournament".to_string()];
+    let outcome = deck::update_deck_metadata(
+        &pool,
+        id,
+        owner,
+        original.updated_at,
+        PatchDeckMetadata {
+            name: Some("Renamed"),
+            description: None,
+            visibility: Some("public"),
+            tags: Some(&new_tags),
+        },
+    )
+    .await
+    .unwrap();
+
+    let updated = match outcome {
+        UpdateOutcome::Updated(row) => row,
+        other => panic!("expected Updated, got {other:?}"),
+    };
+    assert_eq!(updated.name, "Renamed");
+    assert_eq!(updated.visibility, "public");
+    assert_eq!(updated.tags, vec!["aggro", "tournament"]);
+    // Untouched field stays as it was.
+    assert_eq!(updated.format, "classic_constructed");
+    assert!(updated.updated_at > original.updated_at);
+}
+
+#[sqlx::test]
+async fn it_treats_empty_metadata_patch_as_noop(pool: PgPool) {
+    let owner = Uuid::new_v4();
+    let id = deck::create_deck(&pool, new_deck(owner, &[], &[]))
+        .await
+        .unwrap();
+    let original = deck::fetch_deck(&pool, id).await.unwrap().unwrap();
+
+    let outcome = deck::update_deck_metadata(
+        &pool,
+        id,
+        owner,
+        original.updated_at,
+        PatchDeckMetadata::default(),
+    )
+    .await
+    .unwrap();
+
+    let row = match outcome {
+        UpdateOutcome::Updated(row) => row,
+        other => panic!("expected Updated, got {other:?}"),
+    };
+    assert_eq!(
+        row.updated_at, original.updated_at,
+        "empty patch should not bump updated_at"
+    );
+}
+
+#[sqlx::test]
+async fn it_returns_precondition_failed_for_metadata_with_stale_updated_at(pool: PgPool) {
+    let owner = Uuid::new_v4();
+    let id = deck::create_deck(&pool, new_deck(owner, &[], &[]))
+        .await
+        .unwrap();
+    let stale = chrono::DateTime::<chrono::Utc>::from_timestamp_micros(0).unwrap();
+
+    let outcome = deck::update_deck_metadata(
+        &pool,
+        id,
+        owner,
+        stale,
+        PatchDeckMetadata {
+            name: Some("Should not apply"),
+            ..PatchDeckMetadata::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(outcome, UpdateOutcome::PreconditionFailed));
+    let row = deck::fetch_deck(&pool, id).await.unwrap().unwrap();
+    assert_eq!(row.name, "Test Deck");
 }
 
 #[sqlx::test]

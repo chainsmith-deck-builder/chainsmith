@@ -18,6 +18,8 @@ pub enum ErrorCode {
     Unauthorized,
     Forbidden,
     AuthNotConfigured,
+    Conflict,
+    PreconditionRequired,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -48,6 +50,14 @@ pub enum AppError {
     Forbidden,
     #[error("auth is not configured on this server")]
     AuthNotConfigured,
+    /// The `If-Match` precondition didn't match the current resource state —
+    /// a concurrent edit happened between read and write. Maps to 412.
+    #[error("resource was modified by another request")]
+    Conflict,
+    /// The handler requires an `If-Match` header and the client didn't send
+    /// one. Maps to 428 (RFC 6585).
+    #[error("if-match header is required")]
+    PreconditionRequired,
 }
 
 impl AppError {
@@ -59,6 +69,8 @@ impl AppError {
             Self::Unauthorized => ErrorCode::Unauthorized,
             Self::Forbidden => ErrorCode::Forbidden,
             Self::AuthNotConfigured => ErrorCode::AuthNotConfigured,
+            Self::Conflict => ErrorCode::Conflict,
+            Self::PreconditionRequired => ErrorCode::PreconditionRequired,
         }
     }
 
@@ -70,6 +82,8 @@ impl AppError {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Forbidden => StatusCode::FORBIDDEN,
             Self::AuthNotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Conflict => StatusCode::PRECONDITION_FAILED,
+            Self::PreconditionRequired => StatusCode::PRECONDITION_REQUIRED,
         }
     }
 }

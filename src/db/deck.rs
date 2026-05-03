@@ -79,6 +79,62 @@ pub struct NewLoadout<'a> {
     pub equipment: &'a [(&'a str, String)], // (slot, printing_id)
 }
 
+/// Replacement deck content for `replace_deck`. Mirrors `NewDeck` minus
+/// `owner_id` (which is supplied separately, since on update it identifies
+/// the row to replace, not the row to insert).
+#[derive(Debug, Clone)]
+pub struct ReplaceDeck<'a> {
+    pub format: &'a str,
+    pub hero_printing_id: &'a str,
+    pub name: &'a str,
+    pub description: Option<&'a str>,
+    pub visibility: &'a str,
+    pub tags: &'a [String],
+    pub pool: &'a [(String, i16)],
+    pub loadouts: &'a [NewLoadout<'a>],
+}
+
+/// Partial metadata patch for `update_deck_metadata`. `None` for a field
+/// means "leave unchanged"; a `Some` value overwrites. There is intentionally
+/// no way to set `description` back to NULL via this struct — clients that
+/// need to clear it should use `replace_deck`. Documented at the API layer.
+#[derive(Debug, Clone, Default)]
+pub struct PatchDeckMetadata<'a> {
+    pub name: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub visibility: Option<&'a str>,
+    pub tags: Option<&'a [String]>,
+}
+
+impl PatchDeckMetadata<'_> {
+    pub fn is_empty(&self) -> bool {
+        self.name.is_none()
+            && self.description.is_none()
+            && self.visibility.is_none()
+            && self.tags.is_none()
+    }
+}
+
+/// Result of an optimistic-concurrency-protected update. The caller maps
+/// these to HTTP statuses (200, 404, 412).
+//
+// The `Updated` variant carries a full `DeckRow` (~200 bytes) while the
+// others are zero-sized; clippy flags this as `large_enum_variant`. Boxing
+// would cost a heap allocation on every successful update for no real win:
+// `UpdateOutcome` is constructed and matched-on once per call, never copied
+// around in collections.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub enum UpdateOutcome {
+    /// Update applied. `DeckRow` reflects the new state including a freshly
+    /// bumped `updated_at`.
+    Updated(DeckRow),
+    /// Deck doesn't exist, isn't owned by `owner_id`, or is soft-deleted.
+    NotFound,
+    /// Deck exists but its `updated_at` didn't match `expected_updated_at`.
+    PreconditionFailed,
+}
+
 /// Insert a new deck plus all child rows in a single transaction.
 pub async fn create_deck(pool: &PgPool, new: NewDeck<'_>) -> Result<Uuid, sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -101,7 +157,172 @@ pub async fn create_deck(pool: &PgPool, new: NewDeck<'_>) -> Result<Uuid, sqlx::
     .fetch_one(&mut *tx)
     .await?;
 
-    for (printing_id, quantity) in new.pool {
+    insert_pool_and_loadouts(&mut tx, deck_id, new.pool, new.loadouts).await?;
+
+    tx.commit().await?;
+    Ok(deck_id)
+}
+
+/// Replace a deck's contents (metadata + pool + loadouts) atomically, with
+/// optimistic-concurrency control on `updated_at`.
+///
+/// The transaction takes a row-level lock on the deck before any writes, so
+/// concurrent calls from two clients can't both succeed against the same
+/// stale read. Child rows are deleted and re-inserted; cascade FKs handle
+/// loadout entries and equipment.
+pub async fn replace_deck(
+    pool: &PgPool,
+    deck_id: Uuid,
+    owner_id: Uuid,
+    expected_updated_at: DateTime<Utc>,
+    update: ReplaceDeck<'_>,
+) -> Result<UpdateOutcome, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let current = sqlx::query!(
+        r#"
+        SELECT updated_at
+        FROM decks
+        WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+        FOR UPDATE
+        "#,
+        deck_id,
+        owner_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some(current) = current else {
+        return Ok(UpdateOutcome::NotFound);
+    };
+
+    if current.updated_at != expected_updated_at {
+        return Ok(UpdateOutcome::PreconditionFailed);
+    }
+
+    let updated = sqlx::query_as!(
+        DeckRow,
+        r#"
+        UPDATE decks SET
+            format = $3,
+            hero_printing_id = $4,
+            name = $5,
+            description = $6,
+            visibility = $7,
+            tags = $8,
+            updated_at = now()
+        WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+        RETURNING
+            id, owner_id, format, hero_printing_id, name, description,
+            visibility, tags, created_at, updated_at, deleted_at
+        "#,
+        deck_id,
+        owner_id,
+        update.format,
+        update.hero_printing_id,
+        update.name,
+        update.description,
+        update.visibility,
+        update.tags,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query!("DELETE FROM deck_pool_entries WHERE deck_id = $1", deck_id,)
+        .execute(&mut *tx)
+        .await?;
+
+    // Cascade handles deck_loadout_entries and deck_loadout_equipment.
+    sqlx::query!("DELETE FROM deck_loadouts WHERE deck_id = $1", deck_id)
+        .execute(&mut *tx)
+        .await?;
+
+    insert_pool_and_loadouts(&mut tx, deck_id, update.pool, update.loadouts).await?;
+
+    tx.commit().await?;
+    Ok(UpdateOutcome::Updated(updated))
+}
+
+/// Patch deck metadata fields (any subset of name/description/visibility/tags)
+/// with optimistic-concurrency control. An empty patch is a no-op that still
+/// verifies the precondition and returns the current row unchanged — the
+/// `updated_at` is NOT bumped in that case.
+pub async fn update_deck_metadata(
+    pool: &PgPool,
+    deck_id: Uuid,
+    owner_id: Uuid,
+    expected_updated_at: DateTime<Utc>,
+    patch: PatchDeckMetadata<'_>,
+) -> Result<UpdateOutcome, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let row = sqlx::query_as!(
+        DeckRow,
+        r#"
+        SELECT
+            id, owner_id, format, hero_printing_id, name, description,
+            visibility, tags, created_at, updated_at, deleted_at
+        FROM decks
+        WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+        FOR UPDATE
+        "#,
+        deck_id,
+        owner_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some(row) = row else {
+        return Ok(UpdateOutcome::NotFound);
+    };
+
+    if row.updated_at != expected_updated_at {
+        return Ok(UpdateOutcome::PreconditionFailed);
+    }
+
+    if patch.is_empty() {
+        tx.commit().await?;
+        return Ok(UpdateOutcome::Updated(row));
+    }
+
+    // COALESCE keeps the existing column value when its parameter is NULL.
+    // This means a NULL parameter for `description` cannot clear the column —
+    // see `PatchDeckMetadata` doc.
+    let updated = sqlx::query_as!(
+        DeckRow,
+        r#"
+        UPDATE decks SET
+            name = COALESCE($3, name),
+            description = COALESCE($4, description),
+            visibility = COALESCE($5, visibility),
+            tags = COALESCE($6, tags),
+            updated_at = now()
+        WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
+        RETURNING
+            id, owner_id, format, hero_printing_id, name, description,
+            visibility, tags, created_at, updated_at, deleted_at
+        "#,
+        deck_id,
+        owner_id,
+        patch.name,
+        patch.description,
+        patch.visibility,
+        patch.tags,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(UpdateOutcome::Updated(updated))
+}
+
+async fn insert_pool_and_loadouts(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    deck_id: Uuid,
+    pool: &[(String, i16)],
+    loadouts: &[NewLoadout<'_>],
+) -> Result<(), sqlx::Error> {
+    for (printing_id, quantity) in pool {
         sqlx::query!(
             r#"
             INSERT INTO deck_pool_entries (deck_id, printing_id, quantity)
@@ -111,11 +332,11 @@ pub async fn create_deck(pool: &PgPool, new: NewDeck<'_>) -> Result<Uuid, sqlx::
             printing_id,
             quantity,
         )
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    for loadout in new.loadouts {
+    for loadout in loadouts {
         let loadout_id: Uuid = sqlx::query_scalar!(
             r#"
             INSERT INTO deck_loadouts (deck_id, name, notes, ordinal)
@@ -127,7 +348,7 @@ pub async fn create_deck(pool: &PgPool, new: NewDeck<'_>) -> Result<Uuid, sqlx::
             loadout.notes,
             loadout.ordinal,
         )
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await?;
 
         for (printing_id, quantity) in loadout.deck_cards {
@@ -140,7 +361,7 @@ pub async fn create_deck(pool: &PgPool, new: NewDeck<'_>) -> Result<Uuid, sqlx::
                 printing_id,
                 quantity,
             )
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
 
@@ -154,13 +375,12 @@ pub async fn create_deck(pool: &PgPool, new: NewDeck<'_>) -> Result<Uuid, sqlx::
                 slot,
                 printing_id,
             )
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
     }
 
-    tx.commit().await?;
-    Ok(deck_id)
+    Ok(())
 }
 
 /// All non-deleted decks owned by `owner_id`, newest first.

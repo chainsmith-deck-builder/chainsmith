@@ -1,17 +1,26 @@
-//! `POST/GET/DELETE /decks` — saved deck CRUD.
+//! `POST/GET/PUT/PATCH/DELETE /decks` — saved deck CRUD.
 //!
 //! All endpoints require a valid Supabase JWT (`Authorization: Bearer ...`).
 //! Decks are scoped to the authenticated user via `owner_id`. Soft delete
 //! (`deleted_at`) preserves history; deck listing and lookup filter it out.
 //!
-//! `PATCH /decks/{id}` (partial update) is a separate slice — it needs a
-//! field-level merge protocol that's worth designing properly.
+//! ## Optimistic concurrency
+//!
+//! `PUT` and `PATCH` use the standard `If-Match` header for optimistic
+//! concurrency control. `GET`/`POST`/`PUT`/`PATCH` responses carry an `ETag`
+//! header derived from the deck's `updated_at`; clients echo that value via
+//! `If-Match` on the next mutation. A mismatch returns 412; missing the
+//! header returns 428. The ETag value is opaque — clients should treat it as
+//! a literal string, not parse it.
 
 use std::collections::HashMap;
 
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{
+        header::{ETAG, IF_MATCH},
+        HeaderMap, HeaderValue, StatusCode,
+    },
     response::IntoResponse,
     Json,
 };
@@ -23,6 +32,7 @@ use uuid::Uuid;
 
 use crate::auth::AuthenticatedUser;
 use crate::db::deck as db;
+use crate::db::deck::UpdateOutcome;
 use crate::domain::deck::{Deck, EquipmentLoadout, Loadout, LoadoutEntry, PoolEntry};
 use crate::domain::format::FormatId;
 use crate::domain::ids::PrintingId;
@@ -34,6 +44,8 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(create_deck))
         .routes(routes!(list_decks))
         .routes(routes!(get_deck))
+        .routes(routes!(replace_deck))
+        .routes(routes!(update_deck_metadata))
         .routes(routes!(delete_deck))
 }
 
@@ -78,6 +90,39 @@ pub struct CreateDeckRequest {
     pub tags: Vec<String>,
     /// The pool/hero/format/loadouts to save.
     pub deck: Deck,
+}
+
+/// Body for `PUT /decks/{id}` — replaces the entire deck (metadata + pool +
+/// loadouts) atomically. Use this for normal "save my deck" flows where the
+/// client edits in memory and writes the whole thing back.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReplaceDeckRequest {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<Visibility>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub deck: Deck,
+}
+
+/// Body for `PATCH /decks/{id}` — updates a subset of metadata fields. Any
+/// field omitted is left unchanged. To clear `description` back to absent,
+/// use `PUT` (PATCH cannot represent the difference between "not changing"
+/// and "setting to null" without doubling the field's nesting).
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PatchDeckRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<Visibility>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -133,7 +178,7 @@ async fn create_deck(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Json(req): Json<CreateDeckRequest>,
-) -> Result<(StatusCode, Json<DeckResponse>), AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let visibility = req.visibility.unwrap_or(Visibility::Private);
     let format_str = format_id_to_str(req.deck.format);
 
@@ -171,7 +216,7 @@ async fn create_deck(
     // Fetch back the complete deck so we return the exact server view
     // (with timestamps and any DB-set defaults).
     let response = build_deck_response(&state, id).await?;
-    Ok((StatusCode::CREATED, Json(response)))
+    Ok((StatusCode::CREATED, etag_headers(&response), Json(response)))
 }
 
 #[utoipa::path(
@@ -211,7 +256,7 @@ async fn get_deck(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Path(id): Path<Uuid>,
-) -> Result<Json<DeckResponse>, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let row = db::fetch_deck(&state.pool, id)
         .await?
         .ok_or_else(|| AppError::NotFound {
@@ -228,7 +273,130 @@ async fn get_deck(
     }
 
     let response = build_deck_response_from_row(&state, row).await?;
-    Ok(Json(response))
+    Ok((etag_headers(&response), Json(response)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/decks/{id}",
+    operation_id = "replaceDeck",
+    params(
+        ("id" = Uuid, Path, description = "Deck id"),
+        ("If-Match" = String, Header, description = "ETag from a prior GET/POST/PUT/PATCH response. Required."),
+    ),
+    request_body = ReplaceDeckRequest,
+    responses(
+        (status = 200, description = "Deck replaced", body = DeckResponse),
+        (status = 401, description = "Missing or invalid Authorization header", body = ErrorBody),
+        (status = 404, description = "Deck not found or not owned by caller", body = ErrorBody),
+        (status = 412, description = "If-Match did not match the current deck version", body = ErrorBody),
+        (status = 428, description = "If-Match header was not provided", body = ErrorBody),
+    ),
+    security(("bearer" = []))
+)]
+async fn replace_deck(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(req): Json<ReplaceDeckRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let expected = parse_if_match(&headers)?;
+    let visibility = req.visibility.unwrap_or(Visibility::Private);
+    let format_str = format_id_to_str(req.deck.format);
+
+    let pool: Vec<(String, i16)> = req
+        .deck
+        .pool
+        .iter()
+        .map(|e| (e.printing.as_str().to_string(), e.quantity as i16))
+        .collect();
+
+    let loadouts_owned: Vec<OwnedLoadout> = req
+        .deck
+        .loadouts
+        .iter()
+        .enumerate()
+        .map(|(i, l)| OwnedLoadout::from_domain(l, i as i16))
+        .collect();
+    let loadouts_borrowed: Vec<db::NewLoadout<'_>> =
+        loadouts_owned.iter().map(OwnedLoadout::borrow).collect();
+
+    let update = db::ReplaceDeck {
+        format: format_str,
+        hero_printing_id: req.deck.hero.as_str(),
+        name: &req.name,
+        description: req.description.as_deref(),
+        visibility: visibility.as_str(),
+        tags: &req.tags,
+        pool: &pool,
+        loadouts: &loadouts_borrowed,
+    };
+
+    match db::replace_deck(&state.pool, id, user.id, expected, update).await? {
+        UpdateOutcome::Updated(_) => {
+            // Re-fetch the full body so the response includes the rebuilt
+            // pool/loadouts in the same shape as `GET /decks/{id}`.
+            let response = build_deck_response(&state, id).await?;
+            Ok((etag_headers(&response), Json(response)))
+        }
+        UpdateOutcome::NotFound => Err(AppError::NotFound {
+            resource: "deck",
+            id: id.to_string(),
+        }),
+        UpdateOutcome::PreconditionFailed => Err(AppError::Conflict),
+    }
+}
+
+#[utoipa::path(
+    patch,
+    path = "/decks/{id}",
+    operation_id = "patchDeck",
+    params(
+        ("id" = Uuid, Path, description = "Deck id"),
+        ("If-Match" = String, Header, description = "ETag from a prior GET/POST/PUT/PATCH response. Required."),
+    ),
+    request_body = PatchDeckRequest,
+    responses(
+        (status = 200, description = "Metadata updated", body = DeckResponse),
+        (status = 401, description = "Missing or invalid Authorization header", body = ErrorBody),
+        (status = 404, description = "Deck not found or not owned by caller", body = ErrorBody),
+        (status = 412, description = "If-Match did not match the current deck version", body = ErrorBody),
+        (status = 428, description = "If-Match header was not provided", body = ErrorBody),
+    ),
+    security(("bearer" = []))
+)]
+async fn update_deck_metadata(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(req): Json<PatchDeckRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let expected = parse_if_match(&headers)?;
+
+    // An empty patch is a no-op; the precondition is still checked so the
+    // client learns whether its view is current.
+    let visibility_str = req.visibility.map(|v| v.as_str());
+    let tags_slice = req.tags.as_deref();
+    let patch = db::PatchDeckMetadata {
+        name: req.name.as_deref(),
+        description: req.description.as_deref(),
+        visibility: visibility_str,
+        tags: tags_slice,
+    };
+
+    match db::update_deck_metadata(&state.pool, id, user.id, expected, patch).await? {
+        UpdateOutcome::Updated(_) => {
+            let response = build_deck_response(&state, id).await?;
+            Ok((etag_headers(&response), Json(response)))
+        }
+        UpdateOutcome::NotFound => Err(AppError::NotFound {
+            resource: "deck",
+            id: id.to_string(),
+        }),
+        UpdateOutcome::PreconditionFailed => Err(AppError::Conflict),
+    }
 }
 
 #[utoipa::path(
@@ -260,6 +428,37 @@ async fn delete_deck(
 }
 
 // ---- helpers ----
+
+/// Build the `ETag` header for a deck response. Format is a quoted i64
+/// microseconds-since-epoch — opaque to clients, but stable across
+/// serialization round-trips since both Postgres and chrono store
+/// microsecond precision.
+fn etag_headers(response: &DeckResponse) -> [(axum::http::HeaderName, HeaderValue); 1] {
+    let value = format!("\"{}\"", response.updated_at.timestamp_micros());
+    // `value` is constructed from a digit string and ASCII quotes, so the
+    // header conversion cannot fail.
+    let header_value =
+        HeaderValue::from_str(&value).expect("etag is ASCII digits surrounded by ASCII quotes");
+    [(ETAG, header_value)]
+}
+
+/// Parse the `If-Match` header into a `DateTime<Utc>` matching what the DB
+/// layer stores. Surrounding quotes are tolerated so clients can echo the
+/// `ETag` value verbatim. Any malformed input maps to 428 — we treat
+/// "unparseable" the same as "missing" since either way the client needs to
+/// re-read and try again.
+fn parse_if_match(headers: &HeaderMap) -> Result<DateTime<Utc>, AppError> {
+    let raw = headers
+        .get(IF_MATCH)
+        .ok_or(AppError::PreconditionRequired)?
+        .to_str()
+        .map_err(|_| AppError::PreconditionRequired)?;
+    let trimmed = raw.trim().trim_matches('"');
+    let micros: i64 = trimmed
+        .parse()
+        .map_err(|_| AppError::PreconditionRequired)?;
+    DateTime::<Utc>::from_timestamp_micros(micros).ok_or(AppError::PreconditionRequired)
+}
 
 fn can_view(row: &db::DeckRow, viewer: Uuid) -> bool {
     if row.owner_id == viewer {

@@ -329,6 +329,97 @@
           }
         ]
       },
+      "put": {
+        "operationId": "replaceDeck",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Deck id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "ETag from a prior GET/POST/PUT/PATCH response. Required.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceDeckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Deck replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeckResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Authorization header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Deck not found or not owned by caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "If-Match did not match the current deck version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match header was not provided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
       "delete": {
         "tags": [
           "Decks"
@@ -362,6 +453,97 @@
           },
           "404": {
             "description": "Deck not found or not owned by caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "patchDeck",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Deck id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "description": "ETag from a prior GET/POST/PUT/PATCH response. Required.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchDeckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Metadata updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeckResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Authorization header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Deck not found or not owned by caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "If-Match did not match the current deck version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match header was not provided",
             "content": {
               "application/json": {
                 "schema": {
@@ -1124,7 +1306,9 @@
           "not_found",
           "unauthorized",
           "forbidden",
-          "auth_not_configured"
+          "auth_not_configured",
+          "conflict",
+          "precondition_required"
         ]
       },
       "ErrorDetail": {
@@ -1462,6 +1646,44 @@
         },
         "additionalProperties": false
       },
+      "PatchDeckRequest": {
+        "type": "object",
+        "description": "Body for `PATCH /decks/{id}` — updates a subset of metadata fields. Any\nfield omitted is left unchanged. To clear `description` back to absent,\nuse `PUT` (PATCH cannot represent the difference between \"not changing\"\nand \"setting to null\" without doubling the field's nesting).",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "visibility": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Visibility"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "PoolEntry": {
         "type": "object",
         "required": [
@@ -1577,6 +1799,45 @@
           "promo",
           "token"
         ]
+      },
+      "ReplaceDeckRequest": {
+        "type": "object",
+        "description": "Body for `PUT /decks/{id}` — replaces the entire deck (metadata + pool +\nloadouts) atomically. Use this for normal \"save my deck\" flows where the\nclient edits in memory and writes the whole thing back.",
+        "required": [
+          "name",
+          "deck"
+        ],
+        "properties": {
+          "deck": {
+            "$ref": "#/components/schemas/Deck"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "visibility": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Visibility"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "SetCode": {
         "type": "string"
