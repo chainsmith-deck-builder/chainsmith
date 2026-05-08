@@ -1,10 +1,13 @@
 //! JWT verification for the public API.
 //!
-//! Production verifies Supabase-issued RS256 tokens against a JWKS endpoint.
-//! Dev / local environments may use a static HS256 secret; tests use that
-//! mode too. When no auth config is set the server still serves public
-//! routes (catalog, validate, health) but auth-protected routes refuse with
-//! 503 `auth_not_configured`.
+//! Production verifies Supabase-issued tokens against a JWKS endpoint.
+//! Supabase signs with an asymmetric algorithm advertised in the JWT
+//! header; we trust the header's `alg` only after checking it against an
+//! explicit allowlist (`RS256`, `ES256`) so a hostile token can't downgrade
+//! verification to a different scheme. Dev / local environments may use a
+//! static HS256 secret; tests use that mode too. When no auth config is
+//! set the server still serves public routes (catalog, validate, health)
+//! but auth-protected routes refuse with 503 `auth_not_configured`.
 
 pub mod jwks;
 pub mod middleware;
@@ -28,7 +31,9 @@ pub struct AuthContext {
 
 #[derive(Clone)]
 pub enum AuthMode {
-    /// Production: verify RS256 tokens via Supabase JWKS.
+    /// Production: verify tokens against the Supabase JWKS endpoint. The
+    /// JWT header's `alg` is honored, but only after vetting through
+    /// `supported_jwks_alg` (currently RS256 and ES256).
     Jwks {
         jwks: Arc<JwksCache>,
         issuer: String,
@@ -86,8 +91,9 @@ impl AuthContext {
             } => {
                 let header = decode_header(token).map_err(|_| AuthError::InvalidToken)?;
                 let kid = header.kid.ok_or(AuthError::KeyNotFound)?;
+                let alg = supported_jwks_alg(header.alg)?;
                 let key = jwks.key_for_kid(&kid).await?;
-                decode_with(token, &key, Algorithm::RS256, issuer, audience)
+                decode_with(token, &key, alg, issuer, audience)
             }
             AuthMode::DevSecret {
                 secret,
@@ -115,6 +121,18 @@ fn decode_with(
     decode::<Claims>(token, key, &validation)
         .map(|data| data.claims)
         .map_err(|_| AuthError::InvalidToken)
+}
+
+/// Allowlist of asymmetric algorithms accepted via the JWKS path. Supabase
+/// rotated to `ES256` for project signing keys; older or self-hosted
+/// deployments may still issue `RS256`. Anything outside this list — `none`,
+/// HS256, etc. — is rejected, since a JWKS key resolved by `kid` may
+/// otherwise be misused with a different algorithm than it was minted for.
+fn supported_jwks_alg(alg: Algorithm) -> Result<Algorithm, AuthError> {
+    match alg {
+        Algorithm::RS256 | Algorithm::ES256 => Ok(alg),
+        _ => Err(AuthError::InvalidToken),
+    }
 }
 
 /// Convert a `sub` claim string into a UUID. Supabase user IDs are UUIDs,
@@ -243,6 +261,34 @@ mod tests {
     fn it_rejects_non_uuid_subject() {
         assert!(matches!(
             parse_subject("not-a-uuid"),
+            Err(AuthError::InvalidToken)
+        ));
+    }
+
+    #[test]
+    fn it_accepts_rs256_for_jwks() {
+        assert_eq!(
+            supported_jwks_alg(Algorithm::RS256).unwrap(),
+            Algorithm::RS256
+        );
+    }
+
+    #[test]
+    fn it_accepts_es256_for_jwks() {
+        // Supabase rotated to ES256; this is the path most deployments hit.
+        assert_eq!(
+            supported_jwks_alg(Algorithm::ES256).unwrap(),
+            Algorithm::ES256
+        );
+    }
+
+    #[test]
+    fn it_rejects_hs256_via_jwks_path() {
+        // HS256 has no business arriving via JWKS — symmetric keys aren't
+        // published there. Refuse rather than risk a key-confusion attack
+        // where a JWKS-resolved public key gets used as an HMAC secret.
+        assert!(matches!(
+            supported_jwks_alg(Algorithm::HS256),
             Err(AuthError::InvalidToken)
         ));
     }
